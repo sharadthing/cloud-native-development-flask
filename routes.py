@@ -46,9 +46,8 @@ def signup():
         users_collection.insert_one(user_data)
         return jsonify({"msg": "User registered successfully"}), 201
     except Exception as e:
+        logging.error(f"Failed to register user: {str(e)}")
         return jsonify({"msg": f"Failed to register user: {str(e)}"}), 500
-
-
 
 @bp.route('/login', methods=['POST'])
 def login():
