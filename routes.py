@@ -114,8 +114,16 @@ def update_file(filename):
 @bp.route('/delete-file/<path:filename>', methods=['DELETE'])
 def delete_file(filename):
     try:
+        # Get blob client
         blob_client = container_client.get_blob_client(filename)
+
+        # Check if the blob exists
+        if not blob_client.exists():
+            return jsonify({"msg": f"File '{filename}' does not exist"}), 404
+
+        # Delete the blob
         blob_client.delete_blob()
-        return jsonify({"msg": "File deleted successfully"}), 200
+
+        return jsonify({"msg": f"File '{filename}' deleted successfully"}), 200
     except Exception as e:
-        return jsonify({"msg": f"Failed to delete file: {str(e)}"}), 500
+        return jsonify({"msg": f"Failed to delete file '{filename}': {str(e)}"}), 500
