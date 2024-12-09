@@ -16,6 +16,39 @@ BLOB_CONTAINER_NAME = 'com682databsecontaineerblob'
 users_collection = get_mongo_client(MONGO_URI)
 container_client = get_blob_container_client(BLOB_CONNECTION_STRING, BLOB_CONTAINER_NAME)
 
+@bp.route('/signup', methods=['POST'])
+def signup():
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('passwordHash')
+    name = data.get('name')
+    role = data.get('role')
+
+    if not email or not password or not name or not role:
+        return jsonify({"msg": "Missing required fields"}), 400
+
+    if users_collection.find_one({"email": email}):
+        return jsonify({"msg": "Email already registered"}), 400
+
+    user_id = str(uuid.uuid4())
+    created_date = datetime.utcnow().isoformat()
+
+    user_data = {
+        "id": user_id,
+        "role": role,
+        "email": email,
+        "name": name,
+        "passwordHash": password,
+        "createdDate": created_date
+    }
+
+    try:
+        users_collection.insert_one(user_data)
+        return jsonify({"msg": "User registered successfully"}), 201
+    except Exception as e:
+        return jsonify({"msg": f"Failed to register user: {str(e)}"}), 500
+
+
 @bp.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
