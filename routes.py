@@ -49,6 +49,7 @@ def signup():
         return jsonify({"msg": f"Failed to register user: {str(e)}"}), 500
 
 
+
 @bp.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
