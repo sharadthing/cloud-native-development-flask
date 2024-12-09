@@ -85,7 +85,13 @@ def get_file(filename):
         content_type, _ = mimetypes.guess_type(filename)
         content_type = content_type or 'application/octet-stream'  # Fallback if unknown
 
-        return send_file(BytesIO(download_stream.readall()), mimetype=content_type, as_attachment=True, attachment_filename=filename)
+        # Use `download_name` instead of `attachment_filename`
+        return send_file(
+            BytesIO(download_stream.readall()),
+            mimetype=content_type,
+            as_attachment=True,
+            download_name=filename  # Correct parameter for setting the filename
+        )
     except Exception as e:
         return jsonify({"msg": f"Failed to get file: {str(e)}"}), 500
 
