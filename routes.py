@@ -1,5 +1,8 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
 from db import get_mongo_client, get_blob_container_client
+from io import BytesIO
+import mimetypes
+from datetime import datetime, timedelta
 
 # Initialize Blueprint
 bp = Blueprint('routes', __name__)
@@ -62,16 +65,27 @@ def upload_file():
         return jsonify({"msg": "File uploaded successfully"}), 200
     except Exception as e:
         return jsonify({"msg": f"Failed to upload file: {str(e)}"}), 500
-    
 
-
+@bp.route('/list-files', methods=['GET'])
+def list_files():
+    try:
+        blob_list = container_client.list_blobs()
+        files = [blob.name for blob in blob_list]
+        return jsonify(files), 200
+    except Exception as e:
+        return jsonify({"msg": f"Failed to list files: {str(e)}"}), 500
 
 @bp.route('/get-file/<path:filename>', methods=['GET'])
 def get_file(filename):
     try:
         blob_client = container_client.get_blob_client(filename)
         download_stream = blob_client.download_blob()
-        return download_stream.readall(), 200
+
+        # Guess the content type of the file
+        content_type, _ = mimetypes.guess_type(filename)
+        content_type = content_type or 'application/octet-stream'  # Fallback if unknown
+
+        return send_file(BytesIO(download_stream.readall()), mimetype=content_type, as_attachment=True, attachment_filename=filename)
     except Exception as e:
         return jsonify({"msg": f"Failed to get file: {str(e)}"}), 500
 
@@ -99,4 +113,3 @@ def delete_file(filename):
         return jsonify({"msg": "File deleted successfully"}), 200
     except Exception as e:
         return jsonify({"msg": f"Failed to delete file: {str(e)}"}), 500
-    
