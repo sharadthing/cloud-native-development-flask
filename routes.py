@@ -14,6 +14,21 @@ BLOB_CONTAINER_NAME = 'com682databsecontaineerblob'
 blob_service_client = BlobServiceClient.from_connection_string(BLOB_CONNECTION_STRING)
 container_client = blob_service_client.get_container_client(BLOB_CONTAINER_NAME)
 
+@bp.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
+
+    if not email or not password:
+        return jsonify({"msg": "Missing email or password"}), 400
+
+    # Dummy user validation for demonstration purposes
+    if email == "user@example.com" and password == "password":
+        return jsonify({"msg": "Login successful"}), 200
+    else:
+        return jsonify({"msg": "Bad email or password"}), 401
+
 @bp.route('/upload-file', methods=['POST'])
 def upload_file():
     file = request.files['file']
