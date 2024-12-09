@@ -20,7 +20,7 @@ container_client = get_blob_container_client(BLOB_CONNECTION_STRING, BLOB_CONTAI
 def signup():
     data = request.get_json()
     email = data.get('email')
-    password = data.get('passwordHash')
+    password = data.get('password')
     name = data.get('name')
     role = data.get('role')
 
@@ -38,7 +38,7 @@ def signup():
         "role": role,
         "email": email,
         "name": name,
-        "passwordHash": password,
+        "password": password,
         "createdDate": created_date
     }
 
@@ -46,7 +46,6 @@ def signup():
         users_collection.insert_one(user_data)
         return jsonify({"msg": "User registered successfully"}), 201
     except Exception as e:
-        logging.error(f"Failed to register user: {str(e)}")
         return jsonify({"msg": f"Failed to register user: {str(e)}"}), 500
 
 @bp.route('/login', methods=['POST'])
