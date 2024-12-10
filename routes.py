@@ -30,16 +30,11 @@ def signup():
     if users_collection.find_one({"email": email}):
         return jsonify({"msg": "Email already registered"}), 400
 
-    user_id = str(uuid.uuid4())
-    created_date = datetime.utcnow().isoformat()
-
     user_data = {
-        "id": user_id,
         "role": role,
         "email": email,
         "name": name,
-        "password": password,
-        "createdDate": created_date
+        "password": password
     }
 
     try:
