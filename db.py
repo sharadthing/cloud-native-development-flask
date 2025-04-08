@@ -6,8 +6,14 @@ def get_mongo_client(uri):
     try:
         client = MongoClient(uri)
         db = client['cosmosdb-mongodb-v1']
-        users_collection = db['Users']
-        return users_collection
+        accesscodes_collection = db['Accesscodes']
+        admin_collection = db['Admin']
+        workers_collection = db['Workers']
+        return {
+            "Accesscodes": accesscodes_collection,
+            "Admin": admin_collection,
+            "Workers": workers_collection
+        }
     except Exception as e:
         print(f"Error connecting to MongoDB: {str(e)}")
         return None
