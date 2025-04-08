@@ -1,8 +1,8 @@
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify
 from db import get_mongo_client, get_blob_container_client
-from io import BytesIO
-import mimetypes
-from datetime import datetime, timedelta
+from bson import ObjectId
+from datetime import datetime
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # Initialize Blueprint
 bp = Blueprint('routes', __name__)
@@ -12,146 +12,122 @@ MONGO_URI = 'mongodb://hello-students:jBfJVncH9XuuIJVQEVO1WR7B6D5zLQYrgOU4xbGOWc
 BLOB_CONNECTION_STRING = 'DefaultEndpointsProtocol=https;AccountName=com682storagev1;AccountKey=kz99G6p98N/bdlTZ9F4Q/tWqNONgrl47+U9W3Z0i2eo1pv4kPakDkOiuDYRIGLVW/iUfeHlk6gzb+AStMOxwbA==;EndpointSuffix=core.windows.net'
 BLOB_CONTAINER_NAME = 'com682databsecontaineerblob'
 
-# Get MongoDB collection and Blob container client
-users_collection = get_mongo_client(MONGO_URI)
+# Get MongoDB collections
+db = get_mongo_client(MONGO_URI)
+admin_collection = db['Admin']
+worker_collection = db['Workers']
 container_client = get_blob_container_client(BLOB_CONNECTION_STRING, BLOB_CONTAINER_NAME)
 
-@bp.route('/signup', methods=['POST'])
-def signup():
-    data = request.get_json()
-    email = data.get('email')
-    password = data.get('password')
-    name = data.get('name')
-    role = data.get('role')
-
-    if not email or not password or not name or not role:
-        return jsonify({"msg": "Missing required fields"}), 400
-
-    if users_collection.find_one({"email": email}):
-        return jsonify({"msg": "Email already registered"}), 400
-
-    user_data = {
-        "role": role,
-        "email": email,
-        "name": name,
-        "password": password
-    }
-
-    try:
-        users_collection.insert_one(user_data)
-        return jsonify({"msg": "User registered successfully"}), 201
-    except Exception as e:
-        return jsonify({"msg": f"Failed to register user: {str(e)}"}), 500
-
-@bp.route('/login', methods=['POST'])
-def login():
-    data = request.get_json()
-    email = data.get('email')
-    password = data.get('password')
+# Admin Authentication
+@bp.route('/admin/register', methods=['POST'])
+def register_admin():
+    data = request.json
+    email = data.get("email")
+    password = data.get("password")
 
     if not email or not password:
-        return jsonify({"msg": "Missing email or password"}), 400
+        return jsonify({"message": "Email and password required"}), 400
 
-    print(f"Checking login for email: {email} and password: {password}")
-    user = users_collection.find_one({"email": email})
-    print(f"User found: {user}")
+    if admin_collection.find_one({"email": email}):
+        return jsonify({"message": "Admin already exists"}), 400
 
-    if user and user['password'] == password:
-        return jsonify({"msg": "Login successful"}), 200
-    else:
-        return jsonify({"msg": "Bad email or password"}), 401
+    hashed_password = generate_password_hash(password)
+    admin_collection.insert_one({"email": email, "password": hashed_password})
 
-@bp.route('/upload-file', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        return jsonify({"msg": "No file part"}), 400
+    return jsonify({"message": "Admin registered successfully"}), 201
 
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"msg": "No selected file"}), 400
+@bp.route('/admin/login', methods=['POST'])
+def login_admin():
+    data = request.json
+    email = data.get("email")
+    password = data.get("password")
 
-    # Determine the subfolder based on file extension
-    file_extension = file.filename.rsplit('.', 1)[1].lower()
-    if file_extension in {'jpg', 'jpeg', 'png', 'gif'}:
-        subfolder = 'images'
-    elif file_extension in {'mp4', 'avi', 'mov'}:
-        subfolder = 'videos'
-    elif file_extension in {'mp3', 'wav', 'aac'}:
-        subfolder = 'audios'
-    elif file_extension in {'pdf', 'txt', 'doc', 'docx'}:
-        subfolder = 'documents'
-    else:
-        subfolder = 'others'
+    admin = admin_collection.find_one({"email": email})
+    if not admin or not check_password_hash(admin["password"], password):
+        return jsonify({"message": "Invalid credentials"}), 401
 
-    # Specify the path including subdirectory
-    filename = f"{subfolder}/{file.filename}"
+    return jsonify({"message": "Login successful"}), 200
 
+# Worker CRUD Endpoints
+@bp.route('/workers', methods=['GET'])
+def get_workers():
+    status = request.args.get('status')
+    search = request.args.get('search')
+    
+    query = {}
+    
+    if status and status in ['on', 'off', 'suspended']:
+        query['site_access.working_status'] = status
+    
+    if search:
+        query['$or'] = [
+            {'personal_info.full_name': {'$regex': search, '$options': 'i'}},
+            {'site_access.worker_id': {'$regex': search, '$options': 'i'}},
+            {'contact_info.email': {'$regex': search, '$options': 'i'}}
+        ]
+    
+    workers = list(worker_collection.find(query))
+    
+    for worker in workers:
+        worker['_id'] = str(worker['_id'])
+    
+    return jsonify(workers), 200
+
+@bp.route('/workers', methods=['POST'])
+def create_worker():
+    data = request.json
+    
+    if not all(key in data for key in ['personal_info', 'contact_info', 'emergency_contact', 'site_access']):
+        return jsonify({'message': 'Missing required fields'}), 400
+    
+    data['site_access']['created_at'] = datetime.utcnow()
+    
+    result = worker_collection.insert_one(data)
+    
+    return jsonify({
+        'message': 'Worker created successfully',
+        'worker_id': str(result.inserted_id)
+    }), 201
+
+@bp.route('/workers/<worker_id>', methods=['GET'])
+def get_worker(worker_id):
     try:
-        blob_client = container_client.get_blob_client(filename)
-        blob_client.upload_blob(file)
-        return jsonify({"msg": "File uploaded successfully"}), 200
-    except Exception as e:
-        return jsonify({"msg": f"Failed to upload file: {str(e)}"}), 500
+        worker = worker_collection.find_one({'_id': ObjectId(worker_id)})
+        if not worker:
+            return jsonify({'message': 'Worker not found'}), 404
+        
+        worker['_id'] = str(worker['_id'])
+        return jsonify(worker), 200
+    except:
+        return jsonify({'message': 'Invalid worker ID'}), 400
 
-@bp.route('/list-files', methods=['GET'])
-def list_files():
+@bp.route('/workers/<worker_id>', methods=['PUT'])
+def update_worker(worker_id):
+    data = request.json
+    
     try:
-        blob_list = container_client.list_blobs()
-        files = [blob.name for blob in blob_list]
-        return jsonify(files), 200
-    except Exception as e:
-        return jsonify({"msg": f"Failed to list files: {str(e)}"}), 500
-
-@bp.route('/get-file/<path:filename>', methods=['GET'])
-def get_file(filename):
-    try:
-        blob_client = container_client.get_blob_client(filename)
-        download_stream = blob_client.download_blob()
-
-        # Guess the content type of the file
-        content_type, _ = mimetypes.guess_type(filename)
-        content_type = content_type or 'application/octet-stream'  # Fallback if unknown
-
-        # Use `download_name` instead of `attachment_filename`
-        return send_file(
-            BytesIO(download_stream.readall()),
-            mimetype=content_type,
-            as_attachment=True,
-            download_name=filename  # Correct parameter for setting the filename
+        data.pop('_id', None)
+        
+        result = worker_collection.update_one(
+            {'_id': ObjectId(worker_id)},
+            {'$set': data}
         )
-    except Exception as e:
-        return jsonify({"msg": f"Failed to get file: {str(e)}"}), 500
+        
+        if result.modified_count == 0:
+            return jsonify({'message': 'Worker not found or no changes made'}), 404
+        
+        return jsonify({'message': 'Worker updated successfully'}), 200
+    except:
+        return jsonify({'message': 'Invalid worker ID'}), 400
 
-@bp.route('/update-file/<path:filename>', methods=['PUT'])
-def update_file(filename):
-    if 'file' not in request.files:
-        return jsonify({"msg": "No file part"}), 400
-
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({"msg": "No selected file"}), 400
-
+@bp.route('/workers/<worker_id>', methods=['DELETE'])
+def delete_worker(worker_id):
     try:
-        blob_client = container_client.get_blob_client(filename)
-        blob_client.upload_blob(file, overwrite=True)
-        return jsonify({"msg": "File updated successfully"}), 200
-    except Exception as e:
-        return jsonify({"msg": f"Failed to update file: {str(e)}"}), 500
-
-@bp.route('/delete-file/<path:filepath>', methods=['DELETE'])
-def delete_file(filepath):
-    try:
-        # Get blob client with the full path
-        blob_client = container_client.get_blob_client(filepath)
-
-        # Check if the blob exists
-        if not blob_client.exists():
-            return jsonify({"msg": f"File '{filepath}' does not exist"}), 404
-
-        # Delete the blob
-        blob_client.delete_blob()
-
-        return jsonify({"msg": f"File '{filepath}' deleted successfully"}), 200
-    except Exception as e:
-        return jsonify({"msg": f"Failed to delete file '{filepath}': {str(e)}"}), 500
-
+        result = worker_collection.delete_one({'_id': ObjectId(worker_id)})
+        
+        if result.deleted_count == 0:
+            return jsonify({'message': 'Worker not found'}), 404
+        
+        return jsonify({'message': 'Worker deleted successfully'}), 200
+    except:
+        return jsonify({'message': 'Invalid worker ID'}), 400
